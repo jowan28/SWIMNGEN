@@ -1,4 +1,4 @@
-# SWIMSEG_PLUS
+# SWIMNGEN
 ML techniques have been used to create SWIMNGEN, a generative model that can be sampled to get 'extra' images from the SWIMSEG and SWINSEG datasets.
 
 Folders Swimseg_aug and Swinseg_aug contain augmented datasets of each, with their cloud maps.
