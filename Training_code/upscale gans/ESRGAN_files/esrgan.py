@@ -13,6 +13,8 @@ from tensorflow.keras import Input
 import tensorflow as tf
 from keras import backend
 from tensorflow.keras.layers import Layer, InputSpec
+
+
 class Attention(Layer):
     def __init__(self, ch, **kwargs):
         super(Attention, self).__init__(**kwargs)
@@ -26,46 +28,54 @@ class Attention(Layer):
         kernel_shape_h = (1, 1) + (self.channels, self.filters_h)
 
         # Create a trainable weight variable for this layer:
-        self.gamma = self.add_weight(name='gamma', shape=[1], initializer='zeros', trainable=True)
-        self.kernel_f = self.add_weight(shape=kernel_shape_f_g,
-                                        initializer='glorot_uniform',
-                                        name='kernel_f')
-        self.kernel_g = self.add_weight(shape=kernel_shape_f_g,
-                                        initializer='glorot_uniform',
-                                        name='kernel_g')
-        self.kernel_h = self.add_weight(shape=kernel_shape_h,
-                                        initializer='glorot_uniform',
-                                        name='kernel_h')
-        self.bias_f = self.add_weight(shape=(self.filters_f_g,),
-                                      initializer='zeros',
-                                      name='bias_F')
-        self.bias_g = self.add_weight(shape=(self.filters_f_g,),
-                                      initializer='zeros',
-                                      name='bias_g')
-        self.bias_h = self.add_weight(shape=(self.filters_h,),
-                                      initializer='zeros',
-                                      name='bias_h')
+        self.gamma = self.add_weight(
+            name="gamma", shape=[1], initializer="zeros", trainable=True
+        )
+        self.kernel_f = self.add_weight(
+            shape=kernel_shape_f_g, initializer="glorot_uniform", name="kernel_f"
+        )
+        self.kernel_g = self.add_weight(
+            shape=kernel_shape_f_g, initializer="glorot_uniform", name="kernel_g"
+        )
+        self.kernel_h = self.add_weight(
+            shape=kernel_shape_h, initializer="glorot_uniform", name="kernel_h"
+        )
+        self.bias_f = self.add_weight(
+            shape=(self.filters_f_g,), initializer="zeros", name="bias_F"
+        )
+        self.bias_g = self.add_weight(
+            shape=(self.filters_f_g,), initializer="zeros", name="bias_g"
+        )
+        self.bias_h = self.add_weight(
+            shape=(self.filters_h,), initializer="zeros", name="bias_h"
+        )
         super(Attention, self).build(input_shape)
         # Set input spec.
-        self.input_spec = InputSpec(ndim=4,axes={3: input_shape[-1]})
+        self.input_spec = InputSpec(ndim=4, axes={3: input_shape[-1]})
         self.built = True
-
 
     def call(self, x):
         def hw_flatten(x):
-            return backend.reshape(x, shape=[backend.shape(x)[0], backend.shape(x)[1]*backend.shape(x)[2], backend.shape(x)[-1]])
-        
-        f = backend.conv2d(x,
-                     kernel=self.kernel_f,
-                     strides=(1, 1), padding='same')  # [bs, h, w, c']
+            return backend.reshape(
+                x,
+                shape=[
+                    backend.shape(x)[0],
+                    backend.shape(x)[1] * backend.shape(x)[2],
+                    backend.shape(x)[-1],
+                ],
+            )
+
+        f = backend.conv2d(
+            x, kernel=self.kernel_f, strides=(1, 1), padding="same"
+        )  # [bs, h, w, c']
         f = backend.bias_add(f, self.bias_f)
-        g = backend.conv2d(x,
-                     kernel=self.kernel_g,
-                     strides=(1, 1), padding='same')  # [bs, h, w, c']
+        g = backend.conv2d(
+            x, kernel=self.kernel_g, strides=(1, 1), padding="same"
+        )  # [bs, h, w, c']
         g = backend.bias_add(g, self.bias_g)
-        h = backend.conv2d(x,
-                     kernel=self.kernel_h,
-                     strides=(1, 1), padding='same')  # [bs, h, w, c]
+        h = backend.conv2d(
+            x, kernel=self.kernel_h, strides=(1, 1), padding="same"
+        )  # [bs, h, w, c]
         h = backend.bias_add(h, self.bias_h)
 
         s = tf.matmul(hw_flatten(g), hw_flatten(f), transpose_b=True)  # # [bs, N, N]
@@ -82,17 +92,19 @@ class Attention(Layer):
     def compute_output_shape(self, input_shape):
         return input_shape
 
+
 class ESRGAN(object):
     @staticmethod
-    def generator(scalingFactor, featureMaps, residualBlocks,
-            leakyAlpha, residualScalar):
+    def generator(
+        scalingFactor, featureMaps, residualBlocks, leakyAlpha, residualScalar
+    ):
         # initialize the input layer
         inputs = Input((None, None, 4))
-        xIn = Rescaling(scale=1.0/255, offset=0.0)(inputs)
+        xIn = Rescaling(scale=1.0 / 255, offset=0.0)(inputs)
         # pass the input through CONV => LeakyReLU block
         xIn = Conv2D(featureMaps, 9, padding="same")(xIn)
         xIn = LeakyReLU(leakyAlpha)(xIn)
-        
+
         # construct the residual in residual block
         x = Conv2D(featureMaps, 3, padding="same")(xIn)
         x1 = LeakyReLU(leakyAlpha)(x)
@@ -110,9 +122,9 @@ class ESRGAN(object):
         xSkip = Add()([xIn, x4])
         # scale the residual outputs with a scalar between [0,1]
         xSkip = Lambda(lambda x: x * residualScalar)(xSkip)
-        
+
         # create a number of residual in residual blocks
-        for blockId in range(residualBlocks-1):
+        for blockId in range(residualBlocks - 1):
             x = Conv2D(featureMaps, 3, padding="same")(xSkip)
             x1 = LeakyReLU(leakyAlpha)(x)
             x1 = Add()([xSkip, x1])
@@ -128,19 +140,18 @@ class ESRGAN(object):
             x4 = Conv2D(featureMaps, 3, padding="same")(x4)
             xSkip = Add()([xSkip, x4])
             xSkip = Lambda(lambda x: x * residualScalar)(xSkip)
-          
+
         # process the residual output with a conv kernel
         x = Conv2D(featureMaps, 3, padding="same")(xSkip)
         x = Add()([xIn, x])
         # upscale the image with pixel shuffle
-        x = Conv2D(featureMaps * (scalingFactor // 2), 3,
-            padding="same")(x)
+        x = Conv2D(featureMaps * (scalingFactor // 2), 3, padding="same")(x)
         x = tf.nn.depth_to_space(x, 2)
         x = LeakyReLU(leakyAlpha)(x)
         # upscale the image with pixel shuffle
         x = Conv2D(featureMaps, 3, padding="same")(x)
-        #commented out for a x2 upscaling
-        #x = tf.nn.depth_to_space(x, 2)
+        # commented out for a x2 upscaling
+        # x = tf.nn.depth_to_space(x, 2)
         x = LeakyReLU(leakyAlpha)(x)
         # get the output layer
         x = Conv2D(4, 9, padding="same", activation="tanh")(x)
@@ -149,12 +160,12 @@ class ESRGAN(object):
         generator = Model(inputs, output)
         # return the generator model
         return generator
-    
+
     @staticmethod
     def discriminator(featureMaps, leakyAlpha, discBlocks):
         # initialize the input layer and process it with conv kernel
         inputs = Input((None, None, 4))
-        x = Rescaling(scale=1.0/127.5, offset=-1)(inputs)
+        x = Rescaling(scale=1.0 / 127.5, offset=-1)(inputs)
         x = Conv2D(featureMaps, 3, padding="same")(x)
         x = LeakyReLU(leakyAlpha)(x)
 
@@ -178,8 +189,8 @@ class ESRGAN(object):
             x = Conv2D(featureMaps * (2 ** i), 3, padding="same")(x)
             x = BatchNormalization()(x)
             x = LeakyReLU(leakyAlpha)(x)
-            
-        #apply self attention
+
+        # apply self attention
         attention_layer = Attention(x.shape[-1])
         attention_layer.build(x.shape)
         x = attention_layer(x)
@@ -192,4 +203,3 @@ class ESRGAN(object):
         discriminator = Model(inputs, x)
         # return the discriminator model
         return discriminator
-    
